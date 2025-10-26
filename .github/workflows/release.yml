@@ -15,7 +15,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        goos: [linux, windows, darwin]
+        goos: [linux, windows, darwin, freebsd]
         goarch: [amd64, arm64]
     steps:
       - name: Checkout
