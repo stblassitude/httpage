@@ -1,0 +1,80 @@
+name: Build and Release Binaries
+
+on:
+  push:
+    tags:
+      - '*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build (${{ matrix.goos }}/${{ matrix.goarch }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        goos: [linux, windows, darwin]
+        goarch: [amd64, arm64]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+
+      - name: Build
+        env:
+          CGO_ENABLED: '0'
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          PROG=httpage
+          mkdir -p dist
+          EXT=""
+          if [ "$GOOS" = "windows" ]; then EXT=".exe"; fi
+          OUT="dist/${PROG}_${GOOS}_${GOARCH}${EXT}"
+          # Build main at repo root
+          go build -ldflags "-s -w" -o "$OUT" ./
+          echo "Built $OUT"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: httpage_${{ matrix.goos }}_${{ matrix.goarch }}
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: List downloaded files
+        run: |
+          echo "Artifacts in dist/"
+          ls -R dist || true
+
+      - name: Generate checksums
+        run: |
+          cd dist
+          # Flatten potential nested directories from different artifact names
+          find . -type f -maxdepth 2 -mindepth 1 -exec mv -t . {} + || true
+          sha256sum * > SHA256SUMS.txt
+
+      - name: Create Release and Upload Assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
